@@ -2,59 +2,82 @@ package com.gepro.ArbiFinder;
 
 import org.knowm.xchange.Exchange;
 import org.knowm.xchange.currency.CurrencyPair;
+import org.knowm.xchange.dto.marketdata.OrderBook;
 import org.knowm.xchange.dto.marketdata.Ticker;
 import org.knowm.xchange.service.marketdata.MarketDataService;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 public class SpreadFinder {
 
     private List<Exchange> mExchanges;
     private Map<Ticker, Exchange> mTickersToExchange;
+    private Map<OrderBook, Exchange> mOrderbooksToExchange;
+
     private List<CurrencyPair> mPairs;
 
     public SpreadFinder(List<CurrencyPair> pairs, List<Exchange> exchanges) {
         mPairs = pairs;
         mExchanges = exchanges;
         mTickersToExchange = new HashMap<>();
-        renewTickers();
+        mOrderbooksToExchange = new HashMap<>();
     }
 
-    public void checkForSpread() throws InterruptedException {
+//    public void checkForSpread() throws InterruptedException {
+//
+//        while (true) {
+//            long before = System.currentTimeMillis();
+//            renewTickers();
+//            for (CurrencyPair pair : mPairs) {
+//                System.out.flush();
+//                System.out.println("====================");
+//                System.out.println("Max spread for " + pair.toString() + ": " + getMaxSpread(pair));
+//                System.out.println("====================");
+//                Thread.sleep(3000);
+//            }
+//            long after = System.currentTimeMillis();
+//            System.out.println(after - before);
+//        }
+//    }
+    public void renewTickers() {
+        renewData(mTickersToExchange,
+                LambdaExceptionWrapper.handlingBiFunctionWrapper(
+                        (marketDataService, currencyPair) -> marketDataService.getTicker(currencyPair),
+                        IOException.class)
+        );
+    }
 
-        while (true) {
-            long before = System.currentTimeMillis();
-            renewTickers();
-            for (CurrencyPair pair : mPairs) {
-                System.out.flush();
-                System.out.println("====================");
-                System.out.println("Max spread for " + pair.toString() + ": " + getMaxSpread(pair));
-                System.out.println("====================");
-                Thread.sleep(3000);
+    public void renewOrderbooks() {
+        renewData(mOrderbooksToExchange,
+                LambdaExceptionWrapper.handlingBiFunctionWrapper(
+                        (marketDataService, currencyPair) -> marketDataService.getOrderBook(currencyPair),
+                        IOException.class)
+        );
+    }
+
+    private <T> void renewData(Map<T, Exchange> dataMap, BiFunction<MarketDataService, CurrencyPair, T> getData) {
+        synchronized (dataMap) {
+            dataMap.clear();
+
+            // add data for every exchange and pair
+            for (Exchange exc : mExchanges) {
+                MarketDataService ds = exc.getMarketDataService();
+                for (CurrencyPair pair : mPairs)
+                    try {
+                        dataMap.put(getData.apply(ds, pair), exc);
+                    } catch (Exception e) {
+                        System.out.println("Couldnt get data from: " + exc.toString());
+                        break;
+                    }
             }
-            long after = System.currentTimeMillis();
-            System.out.println(after - before);
-        }
-    }
-
-    private void renewTickers() {
-        mTickersToExchange.clear();
-
-        // add tickers for every exchange and pair
-        for (Exchange exc : mExchanges) {
-            MarketDataService ds = exc.getMarketDataService();
-            for (CurrencyPair pair : mPairs)
-                try {
-                    Ticker ticker =     ds.getTicker(pair);
-                    mTickersToExchange.put(ticker, exc);
-                } catch (Exception e) {
-                    System.out.println("Couldnt get ticker from: " + exc.toString());
-                    break;
-                }
         }
     }
 
@@ -97,4 +120,5 @@ public class SpreadFinder {
     public Map<Ticker, Exchange> getTickers(){
         return mTickersToExchange;
     }
+    public Map<OrderBook, Exchange> getmOrderbooksToExchange() { return mOrderbooksToExchange; }
 }
