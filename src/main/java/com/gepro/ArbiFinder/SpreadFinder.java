@@ -4,6 +4,7 @@ import org.knowm.xchange.Exchange;
 import org.knowm.xchange.currency.CurrencyPair;
 import org.knowm.xchange.dto.marketdata.OrderBook;
 import org.knowm.xchange.dto.marketdata.Ticker;
+import org.knowm.xchange.dto.trade.LimitOrder;
 import org.knowm.xchange.service.marketdata.MarketDataService;
 
 import java.io.IOException;
@@ -79,6 +80,13 @@ public class SpreadFinder {
                     }
             }
         }
+    }
+
+    public Map<LimitOrder, Exchange> findArbitrageOrders(
+            CurrencyPair pair,
+            Exchange exchange1,
+            Exchange exchange2) {
+        return null;
     }
 
     public class SpreadExchanges {

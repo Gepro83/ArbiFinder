@@ -1,11 +1,9 @@
 package com.gepro.ArbiFinder;
 
-import org.junit.Ignore;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.knowm.xchange.Exchange;
 import org.knowm.xchange.ExchangeFactory;
-import org.knowm.xchange.abucoins.dto.account.AbucoinsPaymentMethod;
 import org.knowm.xchange.bitstamp.BitstampExchange;
 import org.knowm.xchange.cexio.CexIOExchange;
 import org.knowm.xchange.currency.CurrencyPair;
@@ -20,6 +18,9 @@ import org.opentest4j.TestAbortedException;
 
 import java.math.BigDecimal;
 import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SpreadFinderTest {
 
@@ -101,7 +102,7 @@ class SpreadFinderTest {
     }
 
     @Test
-    void AvgSpreadOverThreshold() {
+    void findArbitrageOrders() {
         int[] askAmounts = new int[]{1, 3, 5, 30, 50};
         int[] askPrices = new int[]{100, 101, 105, 108, 112};
 
@@ -111,12 +112,66 @@ class SpreadFinderTest {
         OrderBook orderBookBuy = new OrderBook(
                 new Date(),
                 createOrders(Order.OrderType.ASK, askAmounts, askPrices),
-                createOrders(Order.OrderType.BID, bidAmounts, bidPrices));
+                createOrders(Order.OrderType.BID, bidAmounts, bidPrices)
+        );
 
-        printOrderbook(orderBookBuy, 5);
-//        TestMarketDataService marketDataService = new TestMarketDataService()
-//        TestExchange exchange = new TestExchange()
-//            }
+        askAmounts = new int[]{2, 2, 3, 1, 5};
+        askPrices = new int[]{105, 106, 110, 111, 120};
+
+        bidAmounts = new int[]{2, 1, 4, 40, 5};
+        bidPrices = new int[]{103, 102, 101, 99, 98};
+
+        OrderBook orderBookSell = new OrderBook(
+                new Date(),
+                createOrders(Order.OrderType.ASK, askAmounts, askPrices),
+                createOrders(Order.OrderType.BID, bidAmounts, bidPrices)
+        );
+
+        TestMarketDataService marketDataServiceBuy =
+                new TestMarketDataService(orderBookBuy, null, CurrencyPair.ETH_EUR);
+        TestMarketDataService marketDataServiceSell =
+                new TestMarketDataService(orderBookSell, null, CurrencyPair.ETH_EUR);
+
+        TestExchange exchangeBuy = new TestExchange(marketDataServiceBuy);
+        TestExchange exchangeSell = new TestExchange(marketDataServiceSell);
+
+        SpreadFinder spreadFinder = new SpreadFinder(
+                Arrays.asList(CurrencyPair.ETH_EUR),
+                Arrays.asList(exchangeBuy, exchangeSell)
+                );
+
+        Map<LimitOrder, Exchange> arbiOrders = spreadFinder.findArbitrageOrders(
+                CurrencyPair.ETH_EUR,
+                exchangeBuy,
+                exchangeSell
+        );
+
+        assertTrue(arbiOrders.containsValue(exchangeBuy));
+        assertTrue(arbiOrders.containsValue(exchangeSell));
+
+        // an order is: amount, price, type (1 ask 2 bid), exchange (3 buy 4 sell)
+        HashSet<List<Integer>> simplifiedOrders = new HashSet<>();
+        simplifiedOrders.add(Arrays.asList(1, 100, 2, 3));
+        simplifiedOrders.add(Arrays.asList(2, 101, 2, 3));
+        simplifiedOrders.add(Arrays.asList(2, 103, 1, 4));
+        simplifiedOrders.add(Arrays.asList(1, 102, 1, 4));
+
+        for(Map.Entry<LimitOrder, Exchange> arbiOrder : arbiOrders.entrySet()){
+            LimitOrder order = arbiOrder.getKey();
+            int amount = order.getOriginalAmount().intValue();
+            int price = order.getLimitPrice().intValue();
+            int type = 0;
+            if(order.getType() == Order.OrderType.ASK) type = 1;
+            if(order.getType() == Order.OrderType.BID) type = 2;
+
+            int exchange = 0;
+            if(arbiOrder.getValue() == exchangeBuy) exchange = 3;
+            if(arbiOrder.getValue() == exchangeSell) exchange = 4;
+
+            List<Integer> simplifiedOrder = Arrays.asList(amount, price, type, exchange);
+            simplifiedOrder.remove(simplifiedOrder);
+        }
+        assertEquals(0, simplifiedOrders.size());
     }
 
     private List<LimitOrder> createOrders(Order.OrderType type, int[] amounts, int[] price){
