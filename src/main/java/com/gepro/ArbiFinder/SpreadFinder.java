@@ -1,13 +1,12 @@
 package com.gepro.ArbiFinder;
 
 import org.knowm.xchange.Exchange;
-import org.knowm.xchange.ExchangeFactory;
 import org.knowm.xchange.currency.CurrencyPair;
 import org.knowm.xchange.dto.marketdata.Ticker;
 import org.knowm.xchange.service.marketdata.MarketDataService;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
+import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,7 +49,7 @@ public class SpreadFinder {
             MarketDataService ds = exc.getMarketDataService();
             for (CurrencyPair pair : mPairs)
                 try {
-                    Ticker ticker = ds.getTicker(pair);
+                    Ticker ticker =     ds.getTicker(pair);
                     mTickersToExchange.put(ticker, exc);
                 } catch (Exception e) {
                     System.out.println("Couldnt get ticker from: " + exc.toString());
@@ -66,6 +65,9 @@ public class SpreadFinder {
         BigDecimal ask;
 
         public BigDecimal spread() { return bid.subtract(ask); }
+        public BigDecimal spreadPercent() {
+            return spread().divide(ask, 6, RoundingMode.CEILING.HALF_DOWN);
+        }
     }
 
     public SpreadExchanges getMaxSpread(CurrencyPair pair) {
@@ -74,20 +76,25 @@ public class SpreadFinder {
         spreadExchanges.bid = new BigDecimal(-1);
         spreadExchanges.ask= new BigDecimal(Integer.MAX_VALUE);
 
-        for (Map.Entry<Ticker, Exchange> entry : mTickersToExchange.entrySet()) {
-            Ticker t = entry.getKey();
-            if (!t.getCurrencyPair().equals(pair))
-                continue;
-            if (t.getAsk().compareTo(spreadExchanges.ask) == -1) {
-                spreadExchanges.ask = t.getAsk();
-                spreadExchanges.buy = entry.getValue();
-            }
-            if (t.getBid().compareTo(spreadExchanges.ask) == 1) {
-                spreadExchanges.bid = t.getBid();
-                spreadExchanges.sell = entry.getValue();
+        synchronized (mTickersToExchange) {
+            for (Map.Entry<Ticker, Exchange> entry : mTickersToExchange.entrySet()) {
+                Ticker t = entry.getKey();
+                if (!t.getCurrencyPair().equals(pair))
+                    continue;
+                if (t.getAsk().compareTo(spreadExchanges.ask) == -1) {
+                    spreadExchanges.ask = t.getAsk();
+                    spreadExchanges.buy = entry.getValue();
+                }
+                if (t.getBid().compareTo(spreadExchanges.ask) == 1) {
+                    spreadExchanges.bid = t.getBid();
+                    spreadExchanges.sell = entry.getValue();
+                }
             }
         }
-
         return spreadExchanges;
+    }
+
+    public Map<Ticker, Exchange> getTickers(){
+        return mTickersToExchange;
     }
 }
