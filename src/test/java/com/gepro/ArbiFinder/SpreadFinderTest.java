@@ -8,14 +8,17 @@ import org.knowm.xchange.bitstamp.BitstampExchange;
 import org.knowm.xchange.cexio.CexIOExchange;
 import org.knowm.xchange.coinbase.CoinbaseExchange;
 import org.knowm.xchange.currency.CurrencyPair;
+import org.knowm.xchange.dto.marketdata.Ticker;
 import org.knowm.xchange.exmo.ExmoExchange;
 import org.knowm.xchange.gdax.GDAXExchange;
 import org.knowm.xchange.kraken.KrakenExchange;
 import org.knowm.xchange.therock.TheRockExchange;
 
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -30,7 +33,7 @@ class SpreadFinderTest {
                         ExchangeFactory.INSTANCE.createExchange(BitstampExchange.class.getName()),
                         ExchangeFactory.INSTANCE.createExchange(KrakenExchange.class.getName()),
                         ExchangeFactory.INSTANCE.createExchange(CexIOExchange.class.getName()),
-                        ExchangeFactory.INSTANCE.createExchange(CoinbaseExchange.class.getName()),
+//                        ExchangeFactory.INSTANCE.createExchange(CoinbaseExchange.class.getName()),
                         ExchangeFactory.INSTANCE.createExchange(GDAXExchange.class.getName()),
                         ExchangeFactory.INSTANCE.createExchange(ExmoExchange.class.getName()),
                         ExchangeFactory.INSTANCE.createExchange(TheRockExchange.class.getName())
@@ -39,8 +42,9 @@ class SpreadFinderTest {
 
     @Test
     void getMaxSpread() {
-
-        SpreadFinder.SpreadExchanges spread = mSpreadFinder.getMaxSpread(CurrencyPair.BTC_EUR);
-        System.out.println("Max spread: " + spread.spread());
+        SpreadFinder.SpreadExchanges spread = mSpreadFinder.getMaxSpread(CurrencyPair.ETH_EUR);
+        System.out.println("Max spread: " + spread.spread() + " = " + spread.spreadPercent());
+        System.out.println("Buy from: " + spread.buy.getClass().getName());
+        System.out.println("Sell to: " + spread.sell.getClass().getName());
     }
 }
