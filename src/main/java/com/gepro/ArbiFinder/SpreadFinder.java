@@ -14,8 +14,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
-import java.util.function.Function;
-import java.util.function.Supplier;
 
 public class SpreadFinder {
 
@@ -48,6 +46,7 @@ public class SpreadFinder {
 //            System.out.println(after - before);
 //        }
 //    }
+
     public void renewTickers() {
         renewData(mTickersToExchange,
                 LambdaExceptionWrapper.handlingBiFunctionWrapper(
@@ -64,6 +63,8 @@ public class SpreadFinder {
         );
     }
 
+    //TODO only renew data for specific pair
+    //TODO dont call getMarketDataService every time since it makes a http request
     private <T> void renewData(Map<T, Exchange> dataMap, BiFunction<MarketDataService, CurrencyPair, T> getData) {
         synchronized (dataMap) {
             dataMap.clear();
@@ -86,6 +87,16 @@ public class SpreadFinder {
             CurrencyPair pair,
             Exchange exchange1,
             Exchange exchange2) {
+
+        
+
+        OrderBook obExc1 = null;
+        OrderBook obExc2 = null;
+        for(Map.Entry<OrderBook, Exchange> entry : mOrderbooksToExchange.entrySet()){
+            OrderBook ob = entry.getKey();
+            Exchange exc = entry.getValue();
+
+        }
         return null;
     }
 
@@ -129,4 +140,6 @@ public class SpreadFinder {
         return mTickersToExchange;
     }
     public Map<OrderBook, Exchange> getmOrderbooksToExchange() { return mOrderbooksToExchange; }
+
+    private static getOrderBooks
 }

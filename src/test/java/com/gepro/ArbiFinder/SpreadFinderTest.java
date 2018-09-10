@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SpreadFinderTest {
 
     private SpreadFinder mSpreadFinder;
+    private static CurrencyPair testPair = CurrencyPair.ETH_EUR;
 
     public SpreadFinderTest() {
         mSpreadFinder = new SpreadFinder(
@@ -111,8 +112,8 @@ class SpreadFinderTest {
 
         OrderBook orderBookBuy = new OrderBook(
                 new Date(),
-                createOrders(Order.OrderType.ASK, askAmounts, askPrices),
-                createOrders(Order.OrderType.BID, bidAmounts, bidPrices)
+                createOrders(Order.OrderType.ASK, askAmounts, askPrices, testPair),
+                createOrders(Order.OrderType.BID, bidAmounts, bidPrices, testPair)
         );
 
         askAmounts = new int[]{2, 2, 3, 1, 5};
@@ -123,25 +124,20 @@ class SpreadFinderTest {
 
         OrderBook orderBookSell = new OrderBook(
                 new Date(),
-                createOrders(Order.OrderType.ASK, askAmounts, askPrices),
-                createOrders(Order.OrderType.BID, bidAmounts, bidPrices)
+                createOrders(Order.OrderType.ASK, askAmounts, askPrices, testPair),
+                createOrders(Order.OrderType.BID, bidAmounts, bidPrices, testPair)
         );
 
-        TestMarketDataService marketDataServiceBuy =
-                new TestMarketDataService(orderBookBuy, null, CurrencyPair.ETH_EUR);
-        TestMarketDataService marketDataServiceSell =
-                new TestMarketDataService(orderBookSell, null, CurrencyPair.ETH_EUR);
-
-        TestExchange exchangeBuy = new TestExchange(marketDataServiceBuy);
-        TestExchange exchangeSell = new TestExchange(marketDataServiceSell);
+        TestExchange exchangeBuy = new TestExchange(orderBookBuy, testPair);
+        TestExchange exchangeSell = new TestExchange(orderBookSell, testPair);
 
         SpreadFinder spreadFinder = new SpreadFinder(
-                Arrays.asList(CurrencyPair.ETH_EUR),
+                Arrays.asList(testPair),
                 Arrays.asList(exchangeBuy, exchangeSell)
                 );
 
         Map<LimitOrder, Exchange> arbiOrders = spreadFinder.findArbitrageOrders(
-                CurrencyPair.ETH_EUR,
+                testPair,
                 exchangeBuy,
                 exchangeSell
         );
@@ -174,7 +170,7 @@ class SpreadFinderTest {
         assertEquals(0, simplifiedOrders.size());
     }
 
-    private List<LimitOrder> createOrders(Order.OrderType type, int[] amounts, int[] price){
+    private static List<LimitOrder> createOrders(Order.OrderType type, int[] amounts, int[] price, CurrencyPair pair){
         if(amounts.length != price.length) throw new TestAbortedException("amounts and prices need to be of same length");
         List<LimitOrder> orders = new ArrayList<>();
 
@@ -182,7 +178,7 @@ class SpreadFinderTest {
             orders.add(new LimitOrder(
                     Order.OrderType.ASK,
                     new BigDecimal(amounts[i]), //volume
-                    CurrencyPair.ETH_EUR,
+                    pair,
                     "1",
                     new Date(),
                     new BigDecimal(price[i]))
@@ -191,7 +187,7 @@ class SpreadFinderTest {
         return orders;
     }
 
-    private void printOrderbook(OrderBook ob, int numEntries){
+    private static void printOrderbook(OrderBook ob, int numEntries){
         System.out.println();
         System.out.println("===========");
         System.out.println("asks: ");
@@ -212,7 +208,7 @@ class SpreadFinderTest {
         System.out.println("===========");
     }
 
-    private void printOrder(LimitOrder order){
+    private static void printOrder(LimitOrder order){
         System.out.println("price: " + order.getLimitPrice() + "\t amount: " + order.getOriginalAmount());
     }
 }
