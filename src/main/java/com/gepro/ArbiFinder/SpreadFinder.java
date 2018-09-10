@@ -88,16 +88,13 @@ public class SpreadFinder {
             Exchange exchange1,
             Exchange exchange2) {
 
-        
+        OrderBook orderBookExc1 = getOrderbook(exchange1, pair);
+        OrderBook orderBookExc2 = getOrderbook(exchange2, pair);
 
-        OrderBook obExc1 = null;
-        OrderBook obExc2 = null;
-        for(Map.Entry<OrderBook, Exchange> entry : mOrderbooksToExchange.entrySet()){
-            OrderBook ob = entry.getKey();
-            Exchange exc = entry.getValue();
+        Map<LimitOrder, Exchange> arbiOrders = new HashMap<>();
+        if(orderBookExc1 == null || orderBookExc2 == null) return arbiOrders;
 
-        }
-        return null;
+        return arbiOrders;
     }
 
     public class SpreadExchanges {
@@ -141,5 +138,14 @@ public class SpreadFinder {
     }
     public Map<OrderBook, Exchange> getmOrderbooksToExchange() { return mOrderbooksToExchange; }
 
-    private static getOrderBooks
+    private OrderBook getOrderbook(Exchange exchange, CurrencyPair pair){
+        for(Map.Entry<OrderBook, Exchange> entry : mOrderbooksToExchange.entrySet()){
+            if(entry.getValue() != exchange) continue;
+            OrderBook ob = entry.getKey();
+            if(ob.getAsks() == null) continue;
+            if(ob.getAsks().get(0) == null) continue;
+            if(ob.getAsks().get(0).getCurrencyPair() == pair) return ob;
+        }
+        return null;
+    }
 }
