@@ -1,6 +1,8 @@
 package com.gepro.ArbiFinder;
 
+import org.jetbrains.annotations.Nullable;
 import org.knowm.xchange.Exchange;
+import org.knowm.xchange.abucoins.dto.account.AbucoinsPaymentMethod;
 import org.knowm.xchange.currency.CurrencyPair;
 import org.knowm.xchange.dto.marketdata.OrderBook;
 import org.knowm.xchange.dto.marketdata.Ticker;
@@ -10,6 +12,7 @@ import org.knowm.xchange.service.marketdata.MarketDataService;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -94,7 +97,23 @@ public class SpreadFinder {
         Map<LimitOrder, Exchange> arbiOrders = new HashMap<>();
         if(orderBookExc1 == null || orderBookExc2 == null) return arbiOrders;
 
+        List<LimitOrder> asks = orderBookExc1.getAsks();
+
         return arbiOrders;
+    }
+
+    private List<LimitOrder> findArbitrageOrders(List<LimitOrder> asks, List<LimitOrder> bids){
+        // sort ascending
+        Collections.sort(asks, (a, b) -> a.getLimitPrice().compareTo(b.getLimitPrice()));
+        // sort descending
+        Collections.sort(bids, (a, b) -> b.getLimitPrice().compareTo(a.getLimitPrice()));
+
+        for(LimitOrder ask : asks) {
+
+            for (LimitOrder bid : bids) {
+                bid.getLimitPrice();
+            }
+        }
     }
 
     public class SpreadExchanges {
@@ -138,6 +157,7 @@ public class SpreadFinder {
     }
     public Map<OrderBook, Exchange> getmOrderbooksToExchange() { return mOrderbooksToExchange; }
 
+    @Nullable
     private OrderBook getOrderbook(Exchange exchange, CurrencyPair pair){
         for(Map.Entry<OrderBook, Exchange> entry : mOrderbooksToExchange.entrySet()){
             if(entry.getValue() != exchange) continue;
