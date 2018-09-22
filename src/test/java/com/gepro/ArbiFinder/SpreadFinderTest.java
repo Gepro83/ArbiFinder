@@ -104,8 +104,9 @@ class SpreadFinderTest {
 
     @Test
     void findArbitrageOrders() {
-        int[] askAmounts = new int[]{1, 3, 5, 30, 50};
-        int[] askPrices = new int[]{100, 101, 105, 108, 112};
+        //also test non-sorted orderbooks
+        int[] askAmounts = new int[]{5, 3, 1, 30, 50};
+        int[] askPrices = new int[]{105, 101, 100, 108, 112};
 
         int[] bidAmounts = new int[]{2, 1, 1, 3, 5};
         int[] bidPrices = new int[]{99, 98, 95, 94, 92};
@@ -119,8 +120,8 @@ class SpreadFinderTest {
         askAmounts = new int[]{2, 2, 3, 1, 5};
         askPrices = new int[]{105, 106, 110, 111, 120};
 
-        bidAmounts = new int[]{2, 1, 4, 40, 5};
-        bidPrices = new int[]{103, 102, 101, 99, 98};
+        bidAmounts = new int[]{4, 1, 2, 40, 5};
+        bidPrices = new int[]{101, 102, 103, 99, 98};
 
         OrderBook orderBookSell = new OrderBook(
                 new Date(),
@@ -167,6 +168,8 @@ class SpreadFinderTest {
             List<Integer> simplifiedOrder = Arrays.asList(amount, price, type, exchange);
             simplifiedOrder.remove(simplifiedOrder);
         }
+        for(List<Integer> simpleOrder : simplifiedOrders)
+            System.out.println(simpleOrder.toString());
         assertEquals(0, simplifiedOrders.size());
     }
 

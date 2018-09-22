@@ -4,6 +4,7 @@ import org.jetbrains.annotations.Nullable;
 import org.knowm.xchange.Exchange;
 import org.knowm.xchange.abucoins.dto.account.AbucoinsPaymentMethod;
 import org.knowm.xchange.currency.CurrencyPair;
+import org.knowm.xchange.dto.Order;
 import org.knowm.xchange.dto.marketdata.OrderBook;
 import org.knowm.xchange.dto.marketdata.Ticker;
 import org.knowm.xchange.dto.trade.LimitOrder;
@@ -11,11 +12,9 @@ import org.knowm.xchange.service.marketdata.MarketDataService;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.MathContext;
 import java.math.RoundingMode;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.BiFunction;
 
 public class SpreadFinder {
@@ -94,26 +93,107 @@ public class SpreadFinder {
         OrderBook orderBookExc1 = getOrderbook(exchange1, pair);
         OrderBook orderBookExc2 = getOrderbook(exchange2, pair);
 
-        Map<LimitOrder, Exchange> arbiOrders = new HashMap<>();
-        if(orderBookExc1 == null || orderBookExc2 == null) return arbiOrders;
+        Map<LimitOrder, Exchange> arbiOrdersToExchange = new HashMap<>();
+        if(orderBookExc1 == null || orderBookExc2 == null) return arbiOrdersToExchange;
 
-        List<LimitOrder> asks = orderBookExc1.getAsks();
+        List<LimitOrder> arbiOrders = findArbitrageOrders(
+                orderBookExc1.getAsks(), orderBookExc2.getBids(), pair);
 
-        return arbiOrders;
+        for(LimitOrder order : arbiOrders)
+
+            if(order.getType() == Order.OrderType.ASK) {
+                arbiOrdersToExchange.put(order, exchange1);
+            }
+            else {
+                arbiOrdersToExchange.put(order, exchange2);
+            }
+
+        if(arbiOrdersToExchange.size() == 0){
+
+            arbiOrders = findArbitrageOrders(
+                    orderBookExc2.getAsks(), orderBookExc1.getBids(), pair
+            );
+
+            for(LimitOrder order : arbiOrders)
+
+                if(order.getType() == Order.OrderType.ASK) {
+                    arbiOrdersToExchange.put(order, exchange2);
+                }
+                else {
+                    arbiOrdersToExchange.put(order, exchange1);
+                }
+        }
+
+        return arbiOrdersToExchange;
     }
 
-    private List<LimitOrder> findArbitrageOrders(List<LimitOrder> asks, List<LimitOrder> bids){
+    private List<LimitOrder> findArbitrageOrders(List<LimitOrder> asks, List<LimitOrder> bids, CurrencyPair pair){
+        //copy since the lists are going to be manipulated
+        List<LimitOrder> _asks = new ArrayList<>(asks);
+        List<LimitOrder> _bids = new ArrayList<>(bids);
         // sort ascending
-        Collections.sort(asks, (a, b) -> a.getLimitPrice().compareTo(b.getLimitPrice()));
+        Collections.sort(_asks, (a, b) -> a.getLimitPrice().compareTo(b.getLimitPrice()));
         // sort descending
-        Collections.sort(bids, (a, b) -> b.getLimitPrice().compareTo(a.getLimitPrice()));
+        Collections.sort(_bids, (a, b) -> b.getLimitPrice().compareTo(a.getLimitPrice()));
 
-        for(LimitOrder ask : asks) {
+        List<LimitOrder> arbiOrders = new ArrayList<>();
+        Map<LimitOrder, BigDecimal> remainingBidAdmount = new HashMap<>();
 
-            for (LimitOrder bid : bids) {
-                bid.getLimitPrice();
+        for(LimitOrder ask : _asks) {
+
+            BigDecimal askAmount = ask.getOriginalAmount();
+
+            bidsloop:
+            for (LimitOrder bid : _bids) {
+
+                BigDecimal askPrice = ask.getLimitPrice();
+                BigDecimal bidPrice = bid.getLimitPrice();
+
+                if (askPrice.compareTo(bidPrice) < 0) {
+
+                    BigDecimal bidAmount = remainingBidAdmount.containsKey(bid) ?
+                            remainingBidAdmount.get(bid) : bid.getOriginalAmount();
+                    BigDecimal arbiOrderAmount;
+                    boolean askCleared = false;
+
+                    if(askAmount.compareTo(bidAmount) > 0) {
+
+                        arbiOrderAmount = bidAmount;
+
+                        askAmount.subtract(arbiOrderAmount,
+                                new MathContext(128, RoundingMode.DOWN));
+
+                        if(askAmount.compareTo(BigDecimal.ZERO) <= 0) askCleared = true;
+
+                        _bids.remove(bid);
+
+                    } else {
+
+                        arbiOrderAmount = askAmount;
+
+                        remainingBidAdmount.put(bid, bidAmount.subtract(
+                                arbiOrderAmount,
+                                new MathContext(128, RoundingMode.DOWN)));
+
+                        askCleared = true;
+                    }
+
+                    arbiOrders.add(new LimitOrder.Builder(Order.OrderType.BID, pair)
+                            .limitPrice(askPrice)
+                            .originalAmount(arbiOrderAmount)
+                            .build());
+
+                    arbiOrders.add(new LimitOrder.Builder(Order.OrderType.ASK, pair)
+                            .limitPrice(bidPrice)
+                            .originalAmount(arbiOrderAmount)
+                            .build());
+
+                    if(askCleared) break bidsloop;
+                }
             }
         }
+
+        return arbiOrders;
     }
 
     public class SpreadExchanges {
