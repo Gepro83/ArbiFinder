@@ -1,8 +1,9 @@
 package com.gepro.ArbiFinder;
 
+import com.gepro.ArbiFinder.utils.OrderUtils;
+import com.gepro.LamdbaHelper.LambdaExceptionWrapper;
 import org.jetbrains.annotations.Nullable;
 import org.knowm.xchange.Exchange;
-import org.knowm.xchange.abucoins.dto.account.AbucoinsPaymentMethod;
 import org.knowm.xchange.currency.CurrencyPair;
 import org.knowm.xchange.dto.Order;
 import org.knowm.xchange.dto.marketdata.OrderBook;
@@ -16,6 +17,7 @@ import java.math.MathContext;
 import java.math.RoundingMode;
 import java.util.*;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 
 public class SpreadFinder {
 
@@ -75,12 +77,7 @@ public class SpreadFinder {
             for (Exchange exc : mExchanges) {
                 MarketDataService ds = exc.getMarketDataService();
                 for (CurrencyPair pair : mPairs)
-                    try {
-                        dataMap.put(getData.apply(ds, pair), exc);
-                    } catch (Exception e) {
-                        System.out.println("Couldnt get data from: " + exc.toString());
-                        break;
-                    }
+                    dataMap.put(getData.apply(ds, pair), exc);
             }
         }
     }
@@ -99,14 +96,22 @@ public class SpreadFinder {
         List<LimitOrder> arbiOrders = findArbitrageOrders(
                 orderBookExc1.getAsks(), orderBookExc2.getBids(), pair);
 
-        for(LimitOrder order : arbiOrders)
+        for(LimitOrder order : arbiOrders) {
 
-            if(order.getType() == Order.OrderType.ASK) {
+
+            if (order.getType() == Order.OrderType.ASK) {
+                if (arbiOrdersToExchange.containsKey(order)) {
+                    arbiOrdersToExchange.remove(order);
+                    arbiOrdersToExchange.put(
+                            OrderUtils.combineByVolume(order, order),
+                            exchange1);
+                } else {
+                    arbiOrdersToExchange.put(order, exchange2);
+                }
+            } else {
                 arbiOrdersToExchange.put(order, exchange1);
             }
-            else {
-                arbiOrdersToExchange.put(order, exchange2);
-            }
+        }
 
         if(arbiOrdersToExchange.size() == 0){
 
@@ -117,10 +122,10 @@ public class SpreadFinder {
             for(LimitOrder order : arbiOrders)
 
                 if(order.getType() == Order.OrderType.ASK) {
-                    arbiOrdersToExchange.put(order, exchange2);
+                    arbiOrdersToExchange.put(order, exchange1);
                 }
                 else {
-                    arbiOrdersToExchange.put(order, exchange1);
+                    arbiOrdersToExchange.put(order, exchange2);
                 }
         }
 
@@ -142,7 +147,7 @@ public class SpreadFinder {
         for(LimitOrder ask : _asks) {
 
             BigDecimal askAmount = ask.getOriginalAmount();
-
+            List<LimitOrder> filledBids = new ArrayList<>();
             bidsloop:
             for (LimitOrder bid : _bids) {
 
@@ -160,13 +165,12 @@ public class SpreadFinder {
 
                         arbiOrderAmount = bidAmount;
 
-                        askAmount.subtract(arbiOrderAmount,
+                        askAmount = askAmount.subtract(arbiOrderAmount,
                                 new MathContext(128, RoundingMode.DOWN));
 
                         if(askAmount.compareTo(BigDecimal.ZERO) <= 0) askCleared = true;
 
-                        _bids.remove(bid);
-
+                        filledBids.add(bid);
                     } else {
 
                         arbiOrderAmount = askAmount;
@@ -191,6 +195,7 @@ public class SpreadFinder {
                     if(askCleared) break bidsloop;
                 }
             }
+            _bids.removeAll(filledBids);
         }
 
         return arbiOrders;
