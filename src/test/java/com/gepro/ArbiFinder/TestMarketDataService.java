@@ -6,6 +6,7 @@ import org.knowm.xchange.dto.marketdata.Ticker;
 import org.knowm.xchange.service.marketdata.MarketDataService;
 import org.opentest4j.TestAbortedException;
 
+
 public class TestMarketDataService implements MarketDataService {
     private OrderBook mOrderbook;
     private Ticker mTicker;
@@ -41,12 +42,14 @@ public class TestMarketDataService implements MarketDataService {
         this.mPair = mPair;
     }
 
-    public OrderBook getOrderbook(CurrencyPair pair){
+    @Override
+    public OrderBook getOrderBook(CurrencyPair pair, Object... args){
         if(!pair.equals(mPair)) throw new TestAbortedException("Wrong currencypair, expected: " + mPair + " but got: " + pair);
         return mOrderbook;
     }
 
-    public Ticker getTicker(CurrencyPair pair){
+    @Override
+    public Ticker getTicker(CurrencyPair pair, Object... args){
         if(!pair.equals(mPair)) throw new TestAbortedException("Wrong currencypair, expected: " + mPair + " but got: " + pair);
         return mTicker;
     }

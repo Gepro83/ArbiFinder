@@ -1,7 +1,7 @@
 package com.gepro.ArbiFinder;
 
 import com.gepro.ArbiFinder.utils.OrderUtils;
-import com.gepro.LamdbaHelper.LambdaExceptionWrapper;
+
 import org.jetbrains.annotations.Nullable;
 import org.knowm.xchange.Exchange;
 import org.knowm.xchange.currency.CurrencyPair;
@@ -17,7 +17,6 @@ import java.math.MathContext;
 import java.math.RoundingMode;
 import java.util.*;
 import java.util.function.BiFunction;
-import java.util.function.Consumer;
 
 public class SpreadFinder {
 
@@ -96,37 +95,38 @@ public class SpreadFinder {
         List<LimitOrder> arbiOrders = findArbitrageOrders(
                 orderBookExc1.getAsks(), orderBookExc2.getBids(), pair);
 
-        for(LimitOrder order : arbiOrders) {
+        Exchange buyHere = exchange2;
+        Exchange sellHere = exchange1;
 
+        if (arbiOrders.size() == 0) {
+            arbiOrders = findArbitrageOrders(
+                    orderBookExc2.getAsks(), orderBookExc1.getBids(), pair);
+
+            buyHere = exchange1;
+            sellHere = exchange2;
+        }
+
+        for(LimitOrder order : arbiOrders) {
 
             if (order.getType() == Order.OrderType.ASK) {
                 if (arbiOrdersToExchange.containsKey(order)) {
                     arbiOrdersToExchange.remove(order);
                     arbiOrdersToExchange.put(
                             OrderUtils.combineByVolume(order, order),
-                            exchange1);
+                            buyHere);
                 } else {
-                    arbiOrdersToExchange.put(order, exchange2);
+                    arbiOrdersToExchange.put(order, buyHere);
                 }
             } else {
-                arbiOrdersToExchange.put(order, exchange1);
+                if (arbiOrdersToExchange.containsKey(order)) {
+                    arbiOrdersToExchange.remove(order);
+                    arbiOrdersToExchange.put(
+                            OrderUtils.combineByVolume(order, order),
+                            sellHere);
+                } else {
+                    arbiOrdersToExchange.put(order, sellHere);
+                }
             }
-        }
-
-        if(arbiOrdersToExchange.size() == 0){
-
-            arbiOrders = findArbitrageOrders(
-                    orderBookExc2.getAsks(), orderBookExc1.getBids(), pair
-            );
-
-            for(LimitOrder order : arbiOrders)
-
-                if(order.getType() == Order.OrderType.ASK) {
-                    arbiOrdersToExchange.put(order, exchange1);
-                }
-                else {
-                    arbiOrdersToExchange.put(order, exchange2);
-                }
         }
 
         return arbiOrdersToExchange;
