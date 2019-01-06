@@ -1,13 +1,14 @@
 package com.gepro.ArbiFinder;
 
+import com.gepro.ArbiFinder.Arbitrage.Arbitrage;
+import com.gepro.ArbiFinder.Arbitrage.ArbitrageTrade;
+import com.gepro.ArbiFinder.Log.TwoWayLogger;
 import com.gepro.ArbiFinder.utils.OrderUtils;
 
-import org.jetbrains.annotations.Nullable;
 import org.knowm.xchange.Exchange;
 import org.knowm.xchange.currency.CurrencyPair;
 import org.knowm.xchange.dto.Order;
 import org.knowm.xchange.dto.marketdata.OrderBook;
-import org.knowm.xchange.dto.marketdata.Ticker;
 import org.knowm.xchange.dto.trade.LimitOrder;
 import org.knowm.xchange.service.marketdata.MarketDataService;
 
@@ -16,134 +17,113 @@ import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
 import java.util.*;
-import java.util.function.BiFunction;
 
 public class SpreadFinder {
 
-    private List<Exchange> mExchanges;
-    private Map<Ticker, Exchange> mTickersToExchange;
-    private Map<OrderBook, Exchange> mOrderbooksToExchange;
+    private final CurrencyPair mPair;
+    private final PayableExchange mExchangeA;
+    private final PayableExchange mExchangeB;
 
-    private List<CurrencyPair> mPairs;
+    private static TwoWayLogger LOG = TwoWayLogger.getInstance();
 
-    public SpreadFinder(List<CurrencyPair> pairs, List<Exchange> exchanges) {
-        mPairs = pairs;
-        mExchanges = exchanges;
-        mTickersToExchange = new HashMap<>();
-        mOrderbooksToExchange = new HashMap<>();
+    public SpreadFinder(CurrencyPair pair, PayableExchange exchangeA, PayableExchange exchangeB) {
+        Objects.requireNonNull(pair);
+        Objects.requireNonNull(exchangeA);
+        Objects.requireNonNull(exchangeB);
+
+        mPair = pair;
+        mExchangeA = exchangeA;
+        mExchangeB = exchangeB;
     }
 
-//    public void checkForSpread() throws InterruptedException {
-//
-//        while (true) {
-//            long before = System.currentTimeMillis();
-//            renewTickers();
-//            for (CurrencyPair pair : mPairs) {
-//                System.out.flush();
-//                System.out.println("====================");
-//                System.out.println("Max spread for " + pair.toString() + ": " + getMaxSpread(pair));
-//                System.out.println("====================");
-//                Thread.sleep(3000);
-//            }
-//            long after = System.currentTimeMillis();
-//            System.out.println(after - before);
-//        }
-//    }
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
 
-    public void renewTickers() {
-        renewData(mTickersToExchange,
-                LambdaExceptionWrapper.handlingBiFunctionWrapper(
-                        (marketDataService, currencyPair) -> marketDataService.getTicker(currencyPair),
-                        IOException.class)
+        SpreadFinder that = (SpreadFinder) o;
+
+        if (!mPair.equals(that.mPair)) return false;
+        if (!mExchangeA.equals(that.mExchangeA)) return false;
+        return mExchangeB.equals(that.mExchangeB);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = mPair.hashCode();
+        result = 31 * result + mExchangeA.hashCode();
+        result = 31 * result + mExchangeB.hashCode();
+        return result;
+    }
+
+    @Override
+    public String toString() {
+        return "SpreadFinder{" +
+                "pair=" + mPair +
+                ", exchangeA=" + mExchangeA +
+                ", exchangeB=" + mExchangeB +
+                '}';
+    }
+
+    private OrderBook getOrderbook(PayableExchange exchange) {
+        MarketDataService ds = exchange.getExchange().getMarketDataService();
+        try {
+            return ds.getOrderBook(mPair);
+        } catch (IOException e) {
+            LOG.write("Couldnt get orderbook for " + exchange);
+            return null;
+        }
+    }
+
+    public Optional<Arbitrage> findArbitrage() {
+
+        OrderBook orderBookExcA = getOrderbook(mExchangeA);
+        OrderBook orderBookExcB = getOrderbook(mExchangeB);
+
+        if(orderBookExcA == null || orderBookExcB == null) return Optional.empty();
+
+        List<ArbitrageTrade> arbiTrades = findArbitrage(
+                orderBookExcA.getAsks(),
+                orderBookExcB.getBids()
+        );
+
+        PayableExchange buyHere = mExchangeA;
+        PayableExchange sellHere = mExchangeB;
+
+        if (arbiTrades.size() == 0) {
+            arbiTrades = findArbitrage(
+                    orderBookExcB.getAsks(),
+                    orderBookExcA.getBids()
+            );
+
+            buyHere = mExchangeB;
+            sellHere = mExchangeA;
+        }
+
+        if (arbiTrades.size() == 0) return Optional.empty();
+
+        return Optional.of(
+                Arbitrage.newInstance(
+                    buyHere.getExchange(),
+                    sellHere.getExchange(),
+                    arbiTrades
+                )
         );
     }
 
-    public void renewOrderbooks() {
-        renewData(mOrderbooksToExchange,
-                LambdaExceptionWrapper.handlingBiFunctionWrapper(
-                        (marketDataService, currencyPair) -> marketDataService.getOrderBook(currencyPair),
-                        IOException.class)
-        );
-    }
-
-    //TODO only renew data for specific pair
-    //TODO dont call getMarketDataService every time since it makes a http request
-    private <T> void renewData(Map<T, Exchange> dataMap, BiFunction<MarketDataService, CurrencyPair, T> getData) {
-        synchronized (dataMap) {
-            dataMap.clear();
-
-            // add data for every exchange and pair
-            for (Exchange exc : mExchanges) {
-                MarketDataService ds = exc.getMarketDataService();
-                for (CurrencyPair pair : mPairs)
-                    dataMap.put(getData.apply(ds, pair), exc);
-            }
-        }
-    }
-
-    public Map<LimitOrder, Exchange> findArbitrageOrders(
-            CurrencyPair pair,
-            Exchange exchange1,
-            Exchange exchange2) {
-
-        OrderBook orderBookExc1 = getOrderbook(exchange1, pair);
-        OrderBook orderBookExc2 = getOrderbook(exchange2, pair);
-
-        Map<LimitOrder, Exchange> arbiOrdersToExchange = new HashMap<>();
-        if(orderBookExc1 == null || orderBookExc2 == null) return arbiOrdersToExchange;
-
-        List<LimitOrder> arbiOrders = findArbitrageOrders(
-                orderBookExc1.getAsks(), orderBookExc2.getBids(), pair);
-
-        Exchange buyHere = exchange2;
-        Exchange sellHere = exchange1;
-
-        if (arbiOrders.size() == 0) {
-            arbiOrders = findArbitrageOrders(
-                    orderBookExc2.getAsks(), orderBookExc1.getBids(), pair);
-
-            buyHere = exchange1;
-            sellHere = exchange2;
-        }
-
-        for(LimitOrder order : arbiOrders) {
-
-            if (order.getType() == Order.OrderType.ASK) {
-                if (arbiOrdersToExchange.containsKey(order)) {
-                    arbiOrdersToExchange.remove(order);
-                    arbiOrdersToExchange.put(
-                            OrderUtils.combineByVolume(order, order),
-                            buyHere);
-                } else {
-                    arbiOrdersToExchange.put(order, buyHere);
-                }
-            } else {
-                if (arbiOrdersToExchange.containsKey(order)) {
-                    arbiOrdersToExchange.remove(order);
-                    arbiOrdersToExchange.put(
-                            OrderUtils.combineByVolume(order, order),
-                            sellHere);
-                } else {
-                    arbiOrdersToExchange.put(order, sellHere);
-                }
-            }
-        }
-
-        return arbiOrdersToExchange;
-    }
-
-    private List<LimitOrder> findArbitrageOrders(List<LimitOrder> asks, List<LimitOrder> bids, CurrencyPair pair){
+    private List<ArbitrageTrade> findArbitrage(List<LimitOrder> asks, List<LimitOrder> bids){
         //copy since the lists are going to be manipulated
         List<LimitOrder> _asks = new ArrayList<>(asks);
         List<LimitOrder> _bids = new ArrayList<>(bids);
         // sort ascending
-        Collections.sort(_asks, (a, b) -> a.getLimitPrice().compareTo(b.getLimitPrice()));
+        Collections.sort(_asks, Comparator.comparing(LimitOrder::getLimitPrice));
         // sort descending
         Collections.sort(_bids, (a, b) -> b.getLimitPrice().compareTo(a.getLimitPrice()));
 
-        List<LimitOrder> arbiOrders = new ArrayList<>();
+        List<ArbitrageTrade> arbiOrders = new ArrayList<>();
         Map<LimitOrder, BigDecimal> remainingBidAdmount = new HashMap<>();
 
+        boolean isArbitragePossible = false;
         for(LimitOrder ask : _asks) {
 
             BigDecimal askAmount = ask.getOriginalAmount();
@@ -154,7 +134,9 @@ public class SpreadFinder {
                 BigDecimal askPrice = ask.getLimitPrice();
                 BigDecimal bidPrice = bid.getLimitPrice();
 
-                if (askPrice.compareTo(bidPrice) < 0) {
+                if (isArbitragePossible(askPrice, bidPrice)) {
+
+                    isArbitragePossible = true;
 
                     BigDecimal bidAmount = remainingBidAdmount.containsKey(bid) ?
                             remainingBidAdmount.get(bid) : bid.getOriginalAmount();
@@ -182,75 +164,35 @@ public class SpreadFinder {
                         askCleared = true;
                     }
 
-                    arbiOrders.add(new LimitOrder.Builder(Order.OrderType.BID, pair)
-                            .limitPrice(askPrice)
-                            .originalAmount(arbiOrderAmount)
-                            .build());
-
-                    arbiOrders.add(new LimitOrder.Builder(Order.OrderType.ASK, pair)
-                            .limitPrice(bidPrice)
-                            .originalAmount(arbiOrderAmount)
-                            .build());
+                    arbiOrders.add(ArbitrageTrade.newInstance(
+                            arbiOrderAmount,
+                            askPrice,
+                            bidPrice
+                    ));
 
                     if(askCleared) break bidsloop;
+
+                } else {
+                    break bidsloop;
                 }
             }
             _bids.removeAll(filledBids);
+            if (isArbitragePossible) {
+                isArbitragePossible = false;
+            } else {
+                break;
+            }
         }
 
         return arbiOrders;
     }
 
-    public class SpreadExchanges {
-        Exchange buy;
-        Exchange sell;
-        BigDecimal bid;
-        BigDecimal ask;
-
-        public BigDecimal spread() { return bid.subtract(ask); }
-        public BigDecimal spreadPercent() {
-            return spread().divide(ask, 6, RoundingMode.CEILING.HALF_DOWN);
-        }
-    }
-
-    public SpreadExchanges getMaxSpread(CurrencyPair pair) {
-        SpreadExchanges spreadExchanges = new SpreadExchanges();
-
-        spreadExchanges.bid = new BigDecimal(-1);
-        spreadExchanges.ask= new BigDecimal(Integer.MAX_VALUE);
-
-        synchronized (mTickersToExchange) {
-            for (Map.Entry<Ticker, Exchange> entry : mTickersToExchange.entrySet()) {
-                Ticker t = entry.getKey();
-                if (!t.getCurrencyPair().equals(pair))
-                    continue;
-                if (t.getAsk().compareTo(spreadExchanges.ask) == -1) {
-                    spreadExchanges.ask = t.getAsk();
-                    spreadExchanges.buy = entry.getValue();
-                }
-                if (t.getBid().compareTo(spreadExchanges.ask) == 1) {
-                    spreadExchanges.bid = t.getBid();
-                    spreadExchanges.sell = entry.getValue();
-                }
+    private boolean isArbitragePossible(BigDecimal askPrice, BigDecimal bidPrice) {
+        if (askPrice.compareTo(bidPrice) < 0) {
+            if (bidPrice.divide(askPrice, 6, RoundingMode.DOWN).doubleValue() > 1.0045) {
+                return true;
             }
         }
-        return spreadExchanges;
-    }
-
-    public Map<Ticker, Exchange> getTickers(){
-        return mTickersToExchange;
-    }
-    public Map<OrderBook, Exchange> getmOrderbooksToExchange() { return mOrderbooksToExchange; }
-
-    @Nullable
-    private OrderBook getOrderbook(Exchange exchange, CurrencyPair pair){
-        for(Map.Entry<OrderBook, Exchange> entry : mOrderbooksToExchange.entrySet()){
-            if(entry.getValue() != exchange) continue;
-            OrderBook ob = entry.getKey();
-            if(ob.getAsks() == null) continue;
-            if(ob.getAsks().get(0) == null) continue;
-            if(ob.getAsks().get(0).getCurrencyPair() == pair) return ob;
-        }
-        return null;
+        return false;
     }
 }
