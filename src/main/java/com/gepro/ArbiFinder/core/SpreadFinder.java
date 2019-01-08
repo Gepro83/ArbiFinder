@@ -1,13 +1,10 @@
-package com.gepro.ArbiFinder;
+package com.gepro.ArbiFinder.core;
 
 import com.gepro.ArbiFinder.Arbitrage.Arbitrage;
 import com.gepro.ArbiFinder.Arbitrage.ArbitrageTrade;
 import com.gepro.ArbiFinder.Log.TwoWayLogger;
-import com.gepro.ArbiFinder.utils.OrderUtils;
 
-import org.knowm.xchange.Exchange;
 import org.knowm.xchange.currency.CurrencyPair;
-import org.knowm.xchange.dto.Order;
 import org.knowm.xchange.dto.marketdata.OrderBook;
 import org.knowm.xchange.dto.trade.LimitOrder;
 import org.knowm.xchange.service.marketdata.MarketDataService;
@@ -17,12 +14,22 @@ import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+
+import static java.util.Arrays.asList;
 
 public class SpreadFinder {
 
     private final CurrencyPair mPair;
     private final PayableExchange mExchangeA;
     private final PayableExchange mExchangeB;
+    private final double mArbitrageThreshold;
+    private final BigDecimal mTotalFee;
+
 
     private static TwoWayLogger LOG = TwoWayLogger.getInstance();
 
@@ -34,6 +41,8 @@ public class SpreadFinder {
         mPair = pair;
         mExchangeA = exchangeA;
         mExchangeB = exchangeB;
+        mTotalFee = exchangeA.getTakerFee().add(exchangeB.getTakerFee());
+        mArbitrageThreshold =mTotalFee.doubleValue() + 1.0;
     }
 
     @Override
@@ -75,16 +84,17 @@ public class SpreadFinder {
         }
     }
 
+    public CurrencyPair getPair(){ return mPair; }
+
     public Optional<Arbitrage> findArbitrage() {
 
-        OrderBook orderBookExcA = getOrderbook(mExchangeA);
-        OrderBook orderBookExcB = getOrderbook(mExchangeB);
+        OrderBooks orderBooks = getOrderBooksConcurrently();
 
-        if(orderBookExcA == null || orderBookExcB == null) return Optional.empty();
+        if(orderBooks.exchangeA == null || orderBooks.exchangeB == null) return Optional.empty();
 
         List<ArbitrageTrade> arbiTrades = findArbitrage(
-                orderBookExcA.getAsks(),
-                orderBookExcB.getBids()
+                orderBooks.exchangeA.getAsks(),
+                orderBooks.exchangeB.getBids()
         );
 
         PayableExchange buyHere = mExchangeA;
@@ -92,8 +102,8 @@ public class SpreadFinder {
 
         if (arbiTrades.size() == 0) {
             arbiTrades = findArbitrage(
-                    orderBookExcB.getAsks(),
-                    orderBookExcA.getBids()
+                    orderBooks.exchangeB.getAsks(),
+                    orderBooks.exchangeA.getBids()
             );
 
             buyHere = mExchangeB;
@@ -115,10 +125,6 @@ public class SpreadFinder {
         //copy since the lists are going to be manipulated
         List<LimitOrder> _asks = new ArrayList<>(asks);
         List<LimitOrder> _bids = new ArrayList<>(bids);
-        // sort ascending
-        Collections.sort(_asks, Comparator.comparing(LimitOrder::getLimitPrice));
-        // sort descending
-        Collections.sort(_bids, (a, b) -> b.getLimitPrice().compareTo(a.getLimitPrice()));
 
         List<ArbitrageTrade> arbiOrders = new ArrayList<>();
         Map<LimitOrder, BigDecimal> remainingBidAdmount = new HashMap<>();
@@ -126,10 +132,14 @@ public class SpreadFinder {
         boolean isArbitragePossible = false;
         for(LimitOrder ask : _asks) {
 
+            System.out.println("checking ask: " + ask.toString());
+
             BigDecimal askAmount = ask.getOriginalAmount();
             List<LimitOrder> filledBids = new ArrayList<>();
             bidsloop:
             for (LimitOrder bid : _bids) {
+
+                System.out.println("checking bid: " + bid.toString());
 
                 BigDecimal askPrice = ask.getLimitPrice();
                 BigDecimal bidPrice = bid.getLimitPrice();
@@ -167,7 +177,8 @@ public class SpreadFinder {
                     arbiOrders.add(ArbitrageTrade.newInstance(
                             arbiOrderAmount,
                             askPrice,
-                            bidPrice
+                            bidPrice,
+                            mTotalFee
                     ));
 
                     if(askCleared) break bidsloop;
@@ -189,10 +200,48 @@ public class SpreadFinder {
 
     private boolean isArbitragePossible(BigDecimal askPrice, BigDecimal bidPrice) {
         if (askPrice.compareTo(bidPrice) < 0) {
-            if (bidPrice.divide(askPrice, 6, RoundingMode.DOWN).doubleValue() > 1.0045) {
+            if (bidPrice.divide(
+                    askPrice,
+                    6,
+                    RoundingMode.DOWN
+                ).doubleValue() > mArbitrageThreshold) {
                 return true;
             }
         }
         return false;
     }
+
+    private class OrderBooks {
+        public OrderBook exchangeA;
+        public OrderBook exchangeB;
+
+        public OrderBooks(OrderBook exchangeA, OrderBook exchangeB) {
+            this.exchangeA = exchangeA;
+            this.exchangeB = exchangeB;
+        }
+    }
+
+    private OrderBooks getOrderBooksConcurrently(){
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+
+        Future<OrderBook> futureExcA = executorService.submit(() -> getOrderbook(mExchangeA));
+        Future<OrderBook> futureExcB = executorService.submit(() -> getOrderbook(mExchangeB));
+
+        executorService.shutdown();
+
+        OrderBook orderBookExcA = null;
+        OrderBook orderBookExcB = null;
+
+        try {
+            executorService.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+            orderBookExcA = futureExcA.get();
+            orderBookExcB = futureExcB.get();
+
+        } catch (InterruptedException | ExecutionException e) {
+            LOG.write("findArbitrage(): Exception while getting orderbooks: " + e.getMessage());
+        }
+
+        return new OrderBooks(orderBookExcA, orderBookExcB);
+    }
+
 }

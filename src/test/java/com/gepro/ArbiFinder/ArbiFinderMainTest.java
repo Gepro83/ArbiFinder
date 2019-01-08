@@ -1,5 +1,8 @@
 package com.gepro.ArbiFinder;
 
+import com.gepro.ArbiFinder.core.PayableExchange;
+import com.gepro.ArbiFinder.core.SpreadFinder;
+
 import org.junit.jupiter.api.Test;
 import org.knowm.xchange.currency.CurrencyPair;
 

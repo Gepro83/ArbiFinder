@@ -1,4 +1,6 @@
-package com.gepro.ArbiFinder;
+package com.gepro.ArbiFinder.utils;
+
+import com.gepro.ArbiFinder.utils.ThrowingBiFunction;
 
 import java.util.function.BiFunction;
 

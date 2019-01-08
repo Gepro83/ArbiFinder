@@ -1,4 +1,4 @@
-package com.gepro.ArbiFinder;
+package com.gepro.ArbiFinder.utils;
 
 @FunctionalInterface
 public interface ThrowingBiFunction<T, U, R, E extends Exception> {

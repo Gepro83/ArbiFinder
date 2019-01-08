@@ -33,6 +33,7 @@ public class TwoWayLogger {
         message = new Date().toString() + " || " + message;
         System.out.println(message);
         try {
+            message += System.lineSeparator();
             fileStream.write(message.getBytes());
         } catch (IOException e) {
             throw new RuntimeException("couldnt write to log file!");

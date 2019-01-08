@@ -1,4 +1,4 @@
-package com.gepro.ArbiFinder;
+package com.gepro.ArbiFinder.core;
 
 import org.knowm.xchange.Exchange;
 

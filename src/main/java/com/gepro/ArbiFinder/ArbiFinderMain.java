@@ -2,36 +2,31 @@ package com.gepro.ArbiFinder;
 
 import com.gepro.ArbiFinder.Arbitrage.Arbitrage;
 import com.gepro.ArbiFinder.Arbitrage.ArbitrageTrade;
+import com.gepro.ArbiFinder.Log.TwoWayLogger;
+import com.gepro.ArbiFinder.core.PayableExchange;
+import com.gepro.ArbiFinder.core.SpreadFinder;
 import com.google.common.collect.Lists;
 
 import org.knowm.xchange.Exchange;
 import org.knowm.xchange.ExchangeFactory;
+import org.knowm.xchange.ExchangeSpecification;
 import org.knowm.xchange.bitstamp.BitstampExchange;
-import org.knowm.xchange.cexio.CexIOExchange;
 import org.knowm.xchange.coinbasepro.CoinbaseProExchange;
 import org.knowm.xchange.currency.CurrencyPair;
-import org.knowm.xchange.dto.Order;
-import org.knowm.xchange.dto.trade.LimitOrder;
-import org.knowm.xchange.exmo.ExmoExchange;
 import org.knowm.xchange.kraken.KrakenExchange;
-import org.knowm.xchange.therock.TheRockExchange;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 
-import javax.sound.midi.Soundbank;
-
-import static java.util.Arrays.asList;
 
 public class ArbiFinderMain {
+
+    private static TwoWayLogger LOG = TwoWayLogger.getInstance();
 
     public static void main(String[] ars) throws InterruptedException, IOException {
 
@@ -41,26 +36,33 @@ public class ArbiFinderMain {
         pairs.add(CurrencyPair.BTC_EUR);
         pairs.add(CurrencyPair.BCH_EUR);
         pairs.add(CurrencyPair.LTC_EUR);
-        pairs.add(CurrencyPair.ETH_BTC);
-        pairs.add(CurrencyPair.LTC_BTC);
-        pairs.add(CurrencyPair.BCH_BTC);
+//        pairs.add(CurrencyPair.ETH_BTC);
+//        pairs.add(CurrencyPair.LTC_BTC);
+//        pairs.add(CurrencyPair.BCH_BTC);
+
+        Exchange kraken = ExchangeFactory.INSTANCE.createExchange(KrakenExchange.class.getName());
+        ExchangeSpecification krakenSpecification = new ExchangeSpecification(KrakenExchange.class.getName());
+        krakenSpecification.setApiKey("yqLrvwkVC4gPyNly35Ny6FBlejNbeq153noQGkPPSAq0Qr1amNzdkHJK");
+        krakenSpecification.setSecretKey("vT8yMiJ1l+P+QvRMx5DzNoWOqDw+P2bETtCDyc7Mjh2SHSQG+CLnQg1/+RuJHTLnTglSyF8dJcbm1GmY4fo2vQ==");
+        kraken.applySpecification(krakenSpecification);
+
 
         List<SpreadFinder> spreadFinders = getSpreadfinderCombinations(
                 Lists.newArrayList(pairs),
                 PayableExchange.of(
                         ExchangeFactory.INSTANCE.createExchange(BitstampExchange.class.getName()),
-                        new BigDecimal("0.25"),
-                        new BigDecimal("0.25")
+                        new BigDecimal("0.0025"),
+                        new BigDecimal("0.0025")
                 ),
                 PayableExchange.of(
-                        ExchangeFactory.INSTANCE.createExchange(KrakenExchange.class.getName()),
-                        new BigDecimal("0.16"),
-                        new BigDecimal("0.26")
+                        kraken,
+                        new BigDecimal("0.0016"),
+                        new BigDecimal("0.0026")
                 ),
                 PayableExchange.of(
                         ExchangeFactory.INSTANCE.createExchange(CoinbaseProExchange.class.getName()),
-                        new BigDecimal("0.00"),
-                        new BigDecimal("0.30")
+                        new BigDecimal("0.0000"),
+                        new BigDecimal("0.0030")
                 )
         );
 
@@ -80,30 +82,21 @@ public class ArbiFinderMain {
     private static void findAndLogArbitrage(
             List<SpreadFinder> spreadFinders,
             FileOutputStream outputStream
-    ) throws IOException {
+    ) {
 
         for (SpreadFinder finder : spreadFinders) {
             finder.findArbitrage().ifPresent(
-                    (arbi) -> logArbitrage(arbi, outputStream));
+                    (arbi) -> logArbitrage(arbi, outputStream, finder.getPair()));
         }
-
-                   /* arbiOrders = spreadFinder.findArbitrageOrders(
-                            pair,
-                            exchanges[i],
-                            exchanges[j]
-                    );
-
-                    if (!arbiOrders.isEmpty()) {
-                        outputStream.write((prettyArbiOrders(arbiOrders) + System.lineSeparator())
-                                .getBytes("UTF-8"));
-                        outputStream.flush();
-                    }*/
-
     }
 
-    private static void logArbitrage(Arbitrage arbitrage, FileOutputStream outputStream){
+    private static void logArbitrage(
+            Arbitrage arbitrage,
+            FileOutputStream outputStream,
+            CurrencyPair pair){
 
-        String arbiString = "buy at "
+        String arbiString = new Date().toString()
+                + " buy " +  pair + " at "
                 + arbitrage
                         .getBuyHere()
                         .getExchangeSpecification()
@@ -118,16 +111,10 @@ public class ArbiFinderMain {
 
         for (ArbitrageTrade trade : arbitrage.getTrades()) {
 
-            double spread = trade.getBidPrice().divide(
-                    trade.getAskPrice(),
-                    6,
-                    RoundingMode.DOWN
-            ).doubleValue() - 1.0;
-
-            arbiString += "askprice: " + trade.getAskPrice().toPlainString()
+            arbiString += " - askprice: " + trade.getAskPrice().toPlainString()
                     + " bidprice: " + trade.getBidPrice().toPlainString()
                     + " amount: " + trade.getAmount().toPlainString()
-                    + " spread: " + (spread * 100) + "%"
+                    + " spread: " + (trade.getSpread().doubleValue() * 100.0) + "%"
                     + System.lineSeparator();
         }
 
@@ -135,7 +122,7 @@ public class ArbiFinderMain {
             outputStream.write(arbiString.getBytes("UTF-8"));
             outputStream.flush();
         } catch (IOException e) {
-            e.printStackTrace();
+            LOG.write("Error writing to arbitrage log");
         }
 
     }
